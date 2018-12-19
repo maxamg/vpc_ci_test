@@ -1,0 +1,83 @@
+version: 2
+jobs:
+  sandbox_deploy:
+    environment:
+      SUBDOMAIN: sandbox
+      DOMAIN: pfx-nonprod.com
+      AWS_DEFAULT_REGION: us-east-1
+      TF_WORKSPACE: sandbox
+      AWS_ENV: sandbox
+    docker:
+      - image: quay.io/planetfitness/kube-circleci-agent:1.0.1d74c83a7eb314e889c81e8fab1eca2c22d58b91
+        auth:
+          username: $QUAY_USER
+          password: $QUAY_PASS
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - checkout:
+          path: ~/project
+      - run: make deploy
+      - persist_to_workspace:
+          root: /root
+          paths:
+            - project
+
+  nonprod_deploy:
+    environment:
+      SUBDOMAIN: nonprod
+      DOMAIN: pfx-nonprod.com
+      AWS_DEFAULT_REGION: us-east-1
+      TF_WORKSPACE: nonprod
+      AWS_ENV: nonprod
+      MIN_REPLICAS: 5
+    docker:
+      - image: quay.io/planetfitness/kube-circleci-agent:1.0.1d74c83a7eb314e889c81e8fab1eca2c22d58b91
+        auth:
+          username: $QUAY_USER
+          password: $QUAY_PASS
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - attach_workspace:
+          at: /root
+      - run: make deploy
+
+  prod_deploy:
+    environment:
+      SUBDOMAIN: api
+      DOMAIN: planetfitness.com
+      AWS_DEFAULT_REGION: us-east-1
+      TF_WORKSPACE: prod
+      AWS_ENV: prod
+      MIN_REPLICAS: 5
+    docker:
+      - image: quay.io/planetfitness/kube-circleci-agent:1.0.1d74c83a7eb314e889c81e8fab1eca2c22d58b91
+        auth:
+          username: $QUAY_USER
+          password: $QUAY_PASS
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - attach_workspace:
+          at: /root
+      - run: make deploy
+
+workflows:
+  version: 2
+  deploy:
+    jobs:
+      - sandbox_deploy:
+          context: sandbox
+      - nonprod_deploy:
+          context: nonprod
+          requires:
+            - sandbox_deploy
+      - prod-gate:
+          type: approval
+          requires:
+            - nonprod_deploy
+      - prod_deploy:
+          context: prod
+          requires:
+            - prod-gate
